@@ -1,0 +1,7 @@
+{
+  "name": "Copy of LinguistAI - Tu Academia de Inglés con IA",
+  "description": "Plataforma educativa de alto rendimiento para aprender inglés con inteligencia artificial generativa.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
