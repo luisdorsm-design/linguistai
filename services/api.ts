@@ -53,8 +53,9 @@ export const api = {
     login: async (password: string): Promise<UserDB | null> => {
       await delay(800);
       if (password === 'LINGUIST2025') {
-        let user = JSON.parse(localStorage.getItem('db_user') || 'null');
-        if (!user) {
+        let userStr = localStorage.getItem('db_user');
+        let user: UserDB;
+        if (!userStr) {
           user = {
             id: 'u1',
             name: 'Emprendedor Linguist',
@@ -66,6 +67,8 @@ export const api = {
             subscription: 'starter'
           };
           api._saveUser(user);
+        } else {
+          user = JSON.parse(userStr);
         }
         localStorage.setItem('isAuthenticated', 'true');
         return user;
