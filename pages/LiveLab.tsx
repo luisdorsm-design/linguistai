@@ -2,10 +2,15 @@ import React, { useState, useRef } from 'react';
 import { getGeminiClient, encode, decode, decodeAudioData } from '../services/gemini';
 import { Modality, LiveServerMessage } from '@google/genai';
 
+interface Message {
+  role: string;
+  text: string;
+}
+
 export const LiveLab: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<string>('Tutor Listo');
-  const [transcript, setTranscript] = useState<{ role: string, text: string }[]>([]);
+  const [transcript, setTranscript] = useState<Message[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -34,34 +39,38 @@ export const LiveLab: React.FC = () => {
           onopen: () => {
             setIsActive(true);
             setStatus('En Vivo');
-            const source = audioContextRef.current!.createMediaStreamSource(stream);
-            const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-            processor.onaudioprocess = (e) => {
-              const input = e.inputBuffer.getChannelData(0);
-              const int16 = new Int16Array(input.length);
-              for (let i = 0; i < input.length; i++) int16[i] = input[i] * 32768;
-              sessionPromise.then(s => s.sendRealtimeInput({ 
-                media: { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' } 
-              }));
-            };
-            source.connect(processor);
-            processor.connect(audioContextRef.current!.destination);
+            if (audioContextRef.current) {
+              const source = audioContextRef.current.createMediaStreamSource(stream);
+              const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+              processor.onaudioprocess = (e) => {
+                const input = e.inputBuffer.getChannelData(0);
+                const int16 = new Int16Array(input.length);
+                for (let i = 0; i < input.length; i++) int16[i] = input[i] * 32768;
+                sessionPromise.then(s => s.sendRealtimeInput({ 
+                  media: { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' } 
+                }));
+              };
+              source.connect(processor);
+              processor.connect(audioContextRef.current.destination);
+            }
           },
           onmessage: async (msg: LiveServerMessage) => {
             if (msg.serverContent?.outputTranscription) {
-               const text = msg.serverContent.outputTranscription.text || "";
-               setTranscript(p => [...p, { role: 'Kore', text }]);
+               const textStr = msg.serverContent.outputTranscription.text || "";
+               setTranscript(p => [...p, { role: 'Kore', text: textStr }]);
             }
             if (msg.serverContent?.inputTranscription) {
-               const text = msg.serverContent.inputTranscription.text || "";
-               setTranscript(p => [...p, { role: 'Tú', text }]);
+               const textStr = msg.serverContent.inputTranscription.text || "";
+               setTranscript(p => [...p, { role: 'Tú', text: textStr }]);
             }
 
-            const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audio && outputAudioContextRef.current) {
+            const modelTurn = msg.serverContent?.modelTurn;
+            const audioPart = modelTurn?.parts?.[0]?.inlineData?.data;
+            
+            if (audioPart && outputAudioContextRef.current) {
               const ctx = outputAudioContextRef.current;
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              const buffer = await decodeAudioData(decode(audio), ctx, 24000, 1);
+              const buffer = await decodeAudioData(decode(audioPart), ctx, 24000, 1);
               const source = ctx.createBufferSource();
               source.buffer = buffer;
               source.connect(ctx.destination);
