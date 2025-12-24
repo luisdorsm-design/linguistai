@@ -1,5 +1,4 @@
-
-import { VocabularyItem, ProficiencyLevel } from '../types';
+import { ProficiencyLevel } from '../types';
 
 interface ActivityLog {
   id: string;
@@ -60,7 +59,7 @@ export const api = {
             id: 'u1',
             name: 'Emprendedor Linguist',
             email: 'admin@linguistai.com',
-            xp: 250, // XP inicial de regalo
+            xp: 250,
             level: 'A1',
             completed: [],
             logs: [],
@@ -78,7 +77,11 @@ export const api = {
     },
     me: (): UserDB => {
       const data = localStorage.getItem('db_user');
-      return data ? JSON.parse(data) : { xp: 0, level: 'A1', completed: [], logs: [], subscription: 'starter' };
+      if (data) return JSON.parse(data);
+      return { 
+        id: 'u0', name: 'Estudiante', email: '', xp: 0, level: 'A1', 
+        completed: [], logs: [], subscription: 'starter' 
+      };
     },
     updateSubscription: async (plan: 'pro' | 'immersion') => {
       await delay(1000);
@@ -137,15 +140,6 @@ export const api = {
 
       api._saveUser(user);
       return user;
-    },
-    getLeaderboard: () => {
-      // Simulación de otros alumnos para que la app se vea "viva"
-      return [
-        { name: "Juan Pérez", xp: 4500, level: "B2" },
-        { name: "Elena Musk", xp: 3200, level: "B1" },
-        { name: "Tú", xp: api.auth.me().xp, level: api.auth.me().level },
-        { name: "Satoshi N.", xp: 1500, level: "A2" }
-      ].sort((a, b) => b.xp - a.xp);
     }
   },
 
