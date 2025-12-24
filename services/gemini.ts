@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { VocabularyItem } from "../types";
 
-// Inicialización de la IA con la llave de entorno
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Inicialización de la IA con la llave de entorno (Cast a string para evitar errores de tipo)
+const getAI = () => new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
 
-// Utilidades de Audio (Raw PCM para Gemini Live)
+// Utilidades de Audio
 let sharedAudioContext: AudioContext | null = null;
 const getAudioContext = (sampleRate: number) => {
   if (!sharedAudioContext) {
@@ -41,9 +41,6 @@ export const decodeAudioData = async (data: Uint8Array, ctx: AudioContext, sampl
 
 export const getGeminiClient = () => getAI();
 
-/**
- * Genera una lección completa usando Gemini 3 Pro
- */
 export const generateFullLesson = async (topic: string, level: string, context: string = "") => {
   const ai = getAI();
   const response = await ai.models.generateContent({
@@ -54,7 +51,7 @@ export const generateFullLesson = async (topic: string, level: string, context: 
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          theory: { type: Type.STRING, description: "Explicación gramatical en Markdown." },
+          theory: { type: Type.STRING },
           quiz: {
             type: Type.ARRAY,
             items: {
@@ -74,9 +71,6 @@ export const generateFullLesson = async (topic: string, level: string, context: 
   return JSON.parse(response.text || '{}');
 };
 
-/**
- * Servicio de Voz (TTS)
- */
 export const speakText = async (text: string) => {
   const ai = getAI();
   try {
@@ -105,28 +99,20 @@ export const speakText = async (text: string) => {
   }
 };
 
-/**
- * Genera imágenes para vocabulario
- */
 export const generateWordImage = async (word: string) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: {
-      parts: [
-        { text: `Educational 3D illustration of the English word "${word}". Clean, artistic, white background.` },
-      ],
+      parts: [{ text: `Educational 3D illustration of "${word}". Clean background.` }],
     },
     config: { imageConfig: { aspectRatio: "1:1" } }
   });
   
-  const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-  return part ? `data:image/png;base64,${part.inlineData.data}` : null;
+  const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  return part?.inlineData ? `data:image/png;base64,${part.inlineData.data}` : null;
 };
 
-/**
- * Analiza la gramática de un texto
- */
 export const generateGrammarFeedback = async (text: string) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
@@ -148,9 +134,6 @@ export const generateGrammarFeedback = async (text: string) => {
   return JSON.parse(response.text || '{}');
 };
 
-/**
- * Generador de Vocabulario Temático
- */
 export const generateVocabularyLesson = async (topic: string): Promise<VocabularyItem[]> => {
   const ai = getAI();
   const response = await ai.models.generateContent({
