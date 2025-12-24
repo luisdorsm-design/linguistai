@@ -1,10 +1,18 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { VocabularyItem } from "../types";
 
-// Inicializamos el cliente. Vite inyectará process.env.API_KEY si está en el .env
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Inicialización de la IA con la llave de entorno
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Utilidades para audio y base64
+// Utilidades de Audio (Raw PCM para Gemini Live)
+let sharedAudioContext: AudioContext | null = null;
+const getAudioContext = (sampleRate: number) => {
+  if (!sharedAudioContext) {
+    sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+  }
+  return sharedAudioContext;
+};
+
 export const encode = (bytes: Uint8Array) => {
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
@@ -24,25 +32,29 @@ export const decodeAudioData = async (data: Uint8Array, ctx: AudioContext, sampl
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
   }
   return buffer;
 };
 
 export const getGeminiClient = () => getAI();
 
-// Generador de lecciones profundas
+/**
+ * Genera una lección completa usando Gemini 3 Pro
+ */
 export const generateFullLesson = async (topic: string, level: string, context: string = "") => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Actúa como un profesor de inglés experto. Crea una lección completa sobre "${topic}" para nivel ${level}. ${context}. Responde solo en JSON.`,
+    contents: `Actúa como un profesor nativo de inglés experto. Crea una lección sobre "${topic}" para nivel ${level}. Contexto adicional: ${context}. Responde en JSON.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          theory: { type: Type.STRING },
+          theory: { type: Type.STRING, description: "Explicación gramatical en Markdown." },
           quiz: {
             type: Type.ARRAY,
             items: {
@@ -62,58 +74,64 @@ export const generateFullLesson = async (topic: string, level: string, context: 
   return JSON.parse(response.text || '{}');
 };
 
-// Evaluador de entrevistas STAR
-export const evaluateInterviewAnswer = async (jobRole: string, question: string, answer: string) => {
-  const ai = getAI();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Job: ${jobRole}. Question: ${question}. Answer: ${answer}. Evalua usando STAR. JSON.`,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          score: { type: Type.NUMBER },
-          feedback: { type: Type.STRING },
-          betterVersion: { type: Type.STRING },
-          nextQuestion: { type: Type.STRING }
-        }
-      }
-    }
-  });
-  return JSON.parse(response.text || '{}');
-};
-
-// IA de Voz (TTS)
+/**
+ * Servicio de Voz (TTS)
+ */
 export const speakText = async (text: string) => {
   const ai = getAI();
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text }] }],
+      contents: [{ parts: [{ text: `Speak naturally in English: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+        },
       },
     });
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const ctx = getAudioContext(24000);
+      if (ctx.state === 'suspended') await ctx.resume();
       const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(ctx.destination);
       source.start();
     }
-  } catch (e) { console.error("TTS Error", e); }
+  } catch (e) {
+    console.error("Audio error:", e);
+  }
 };
 
-// Otras funciones necesarias para componentes
+/**
+ * Genera imágenes para vocabulario
+ */
+export const generateWordImage = async (word: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [
+        { text: `Educational 3D illustration of the English word "${word}". Clean, artistic, white background.` },
+      ],
+    },
+    config: { imageConfig: { aspectRatio: "1:1" } }
+  });
+  
+  const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+  return part ? `data:image/png;base64,${part.inlineData.data}` : null;
+};
+
+/**
+ * Analiza la gramática de un texto
+ */
 export const generateGrammarFeedback = async (text: string) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Correct this English text: "${text}". JSON.`,
+    contents: `Analiza este texto en inglés: "${text}". Corrige errores y explica por qué en español.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -130,11 +148,14 @@ export const generateGrammarFeedback = async (text: string) => {
   return JSON.parse(response.text || '{}');
 };
 
-export const generateVocabularyLesson = async (topic: string) => {
+/**
+ * Generador de Vocabulario Temático
+ */
+export const generateVocabularyLesson = async (topic: string): Promise<VocabularyItem[]> => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Vocab for "${topic}". JSON array of {word, definition, example}.`,
+    contents: `Genera 5 palabras clave sobre "${topic}".`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -153,21 +174,11 @@ export const generateVocabularyLesson = async (topic: string) => {
   return JSON.parse(response.text || '[]');
 };
 
-export const generateWordImage = async (word: string) => {
-  const ai = getAI();
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
-    contents: { parts: [{ text: `High quality educational illustration of the word: ${word}.` }] },
-  });
-  const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-  return part ? `data:image/png;base64,${part.inlineData.data}` : null;
-};
-
-export const generateScenarioExercise = async (level: string, scenario: string, culture: string) => {
+export const generateScenarioExercise = async (level: string, scenarioName: string, culture: string) => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Create scenario: ${scenario} in ${culture} for ${level}. JSON.`,
+    contents: `Crea un ejercicio de rol en "${scenarioName}" (${culture}) para nivel ${level}.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -175,9 +186,30 @@ export const generateScenarioExercise = async (level: string, scenario: string, 
         properties: {
           question: { type: Type.STRING },
           options: { type: Type.ARRAY, items: { type: Type.STRING } },
-          correctAnswer: { type: Type.INTEGER },
+          correctAnswer: { type: Type.NUMBER },
           explanation: { type: Type.STRING },
           culturalInsight: { type: Type.STRING }
+        }
+      }
+    }
+  });
+  return JSON.parse(response.text || '{}');
+};
+
+export const evaluateInterviewAnswer = async (jobRole: string, question: string, answer: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: `Evalúa esta respuesta de entrevista para "${jobRole}": "${answer}"`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          score: { type: Type.NUMBER },
+          feedback: { type: Type.STRING },
+          betterVersion: { type: Type.STRING },
+          nextQuestion: { type: Type.STRING }
         }
       }
     }
