@@ -1,10 +1,15 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { VocabularyItem } from "../types";
 
-// Inicialización de la IA con la llave de entorno (Cast a string para evitar errores de tipo)
-const getAI = () => new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+// Declaración para evitar errores de compilación con process en el navegador
+declare const process: {
+  env: {
+    API_KEY: string;
+  };
+};
 
-// Utilidades de Audio
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+
 let sharedAudioContext: AudioContext | null = null;
 const getAudioContext = (sampleRate: number) => {
   if (!sharedAudioContext) {
@@ -84,7 +89,8 @@ export const speakText = async (text: string) => {
         },
       },
     });
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const candidate = response.candidates?.[0];
+    const base64Audio = candidate?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const ctx = getAudioContext(24000);
       if (ctx.state === 'suspended') await ctx.resume();
@@ -109,7 +115,8 @@ export const generateWordImage = async (word: string) => {
     config: { imageConfig: { aspectRatio: "1:1" } }
   });
   
-  const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  const candidate = response.candidates?.[0];
+  const part = candidate?.content?.parts?.find(p => p.inlineData);
   return part?.inlineData ? `data:image/png;base64,${part.inlineData.data}` : null;
 };
 
