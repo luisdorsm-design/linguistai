@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
@@ -8,9 +7,10 @@ export const Login: React.FC = () => {
   const [error, setError] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (authService.login(password)) {
+    const success = await authService.login(password);
+    if (success) {
       navigate('/');
     } else {
       setError(true);
@@ -45,10 +45,6 @@ export const Login: React.FC = () => {
             Acceder a la Plataforma
           </button>
         </form>
-
-        <div className="pt-8 border-t border-slate-100 text-center text-sm text-slate-400">
-          ¿No tienes acceso? <a href="#" className="text-indigo-600 font-bold hover:underline">Solicitar una cuenta</a>
-        </div>
       </div>
     </div>
   );
